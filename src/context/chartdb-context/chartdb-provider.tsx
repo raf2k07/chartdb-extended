@@ -34,6 +34,7 @@ import {
     type DBCustomType,
 } from '@/lib/domain/db-custom-type';
 import { getDefaultPrimaryKeyType } from '@/lib/data/data-types/data-types';
+import { useServerSync } from '@/hooks/use-server-sync';
 
 export interface ChartDBProviderProps {
     diagram?: Diagram;
@@ -170,6 +171,10 @@ export const ChartDBProvider: React.FC<
             diagramUpdatedAt,
         ]
     );
+
+    // Write-through sync: debounced PUT of the complete diagram to SQLite after
+    // every state change. No-op when USE_SERVER_STORAGE is false.
+    useServerSync(currentDiagram);
 
     const clearDiagramData: ChartDBContext['clearDiagramData'] =
         useCallback(async () => {
@@ -661,6 +666,9 @@ export const ChartDBProvider: React.FC<
             options = { updateHistory: true }
         ) => {
             const prevField = getField(tableId, fieldId);
+            // Read the current table from React state — always up-to-date,
+            // unlike db.getTable() which returns a stale in-memory cache snapshot.
+            const currentTable = getTable(tableId);
 
             const updateTableFn = (table: DBTable) => {
                 const updatedTable: DBTable = {
@@ -687,21 +695,18 @@ export const ChartDBProvider: React.FC<
                 })
             );
 
-            const table = await db.getTable({ diagramId, id: tableId });
-            if (!table) {
-                return;
-            }
-
             const updatedAt = new Date();
             setDiagramUpdatedAt(updatedAt);
             await Promise.all([
                 db.updateDiagram({ id: diagramId, attributes: { updatedAt } }),
-                db.updateTable({
-                    id: tableId,
-                    attributes: {
-                        ...updateTableFn(table),
-                    },
-                }),
+                ...(currentTable
+                    ? [
+                          db.updateTable({
+                              id: tableId,
+                              attributes: updateTableFn(currentTable),
+                          }),
+                      ]
+                    : []),
             ]);
 
             if (!!prevField && options.updateHistory) {
@@ -717,7 +722,15 @@ export const ChartDBProvider: React.FC<
                 resetRedoStack();
             }
         },
-        [db, diagramId, setTables, addUndoAction, resetRedoStack, getField]
+        [
+            db,
+            diagramId,
+            setTables,
+            addUndoAction,
+            resetRedoStack,
+            getField,
+            getTable,
+        ]
     );
 
     const removeField: ChartDBContext['removeField'] = useCallback(
@@ -741,6 +754,9 @@ export const ChartDBProvider: React.FC<
 
             const fields = getTable(tableId)?.fields ?? [];
             const prevField = getField(tableId, fieldId);
+            // Read the current table from React state before setTables runs —
+            // always up-to-date, unlike db.getTable() which returns a stale cache.
+            const currentTable = getTable(tableId);
             setTables((tables) =>
                 tables.map((table) => {
                     if (table.id === tableId) {
@@ -760,21 +776,18 @@ export const ChartDBProvider: React.FC<
                 },
             });
 
-            const table = await db.getTable({ diagramId, id: tableId });
-            if (!table) {
-                return;
-            }
-
             const updatedAt = new Date();
             setDiagramUpdatedAt(updatedAt);
             await Promise.all([
                 db.updateDiagram({ id: diagramId, attributes: { updatedAt } }),
-                db.updateTable({
-                    id: tableId,
-                    attributes: {
-                        ...updateTableFn(table),
-                    },
-                }),
+                ...(currentTable
+                    ? [
+                          db.updateTable({
+                              id: tableId,
+                              attributes: updateTableFn(currentTable),
+                          }),
+                      ]
+                    : []),
             ]);
 
             if (!!prevField && options.updateHistory) {
@@ -805,17 +818,14 @@ export const ChartDBProvider: React.FC<
             options = { updateHistory: true }
         ) => {
             const fields = getTable(tableId)?.fields ?? [];
+            // Read the current table from React state before setTables runs —
+            // always up-to-date. The old code called db.updateTable inside setTables
+            // (a side-effect in a pure state setter) and then discarded the
+            // db.getTable() result, leaving field adds only partially persisted.
+            const currentTable = getTable(tableId);
             setTables((tables) => {
                 return tables.map((table) => {
                     if (table.id === tableId) {
-                        db.updateTable({
-                            id: tableId,
-                            attributes: {
-                                ...table,
-                                fields: [...table.fields, field],
-                            },
-                        });
-
                         return { ...table, fields: [...table.fields, field] };
                     }
 
@@ -832,16 +842,21 @@ export const ChartDBProvider: React.FC<
                 },
             });
 
-            const table = await db.getTable({ diagramId, id: tableId });
-
-            if (!table) {
-                return;
-            }
-
             const updatedAt = new Date();
             setDiagramUpdatedAt(updatedAt);
             await Promise.all([
                 db.updateDiagram({ id: diagramId, attributes: { updatedAt } }),
+                ...(currentTable
+                    ? [
+                          db.updateTable({
+                              id: tableId,
+                              attributes: {
+                                  ...currentTable,
+                                  fields: [...currentTable.fields, field],
+                              },
+                          }),
+                      ]
+                    : []),
             ]);
 
             if (options.updateHistory) {
@@ -898,6 +913,8 @@ export const ChartDBProvider: React.FC<
             index: DBIndex,
             options = { updateHistory: true }
         ) => {
+            // Read current table from React state before setTables runs.
+            const dbTable = getTable(tableId);
             setTables((tables) =>
                 tables.map((table) =>
                     table.id === tableId
@@ -906,22 +923,21 @@ export const ChartDBProvider: React.FC<
                 )
             );
 
-            const dbTable = await db.getTable({ diagramId, id: tableId });
-            if (!dbTable) {
-                return;
-            }
-
             const updatedAt = new Date();
             setDiagramUpdatedAt(updatedAt);
             await Promise.all([
                 db.updateDiagram({ id: diagramId, attributes: { updatedAt } }),
-                db.updateTable({
-                    id: tableId,
-                    attributes: {
-                        ...dbTable,
-                        indexes: [...dbTable.indexes, index],
-                    },
-                }),
+                ...(dbTable
+                    ? [
+                          db.updateTable({
+                              id: tableId,
+                              attributes: {
+                                  ...dbTable,
+                                  indexes: [...dbTable.indexes, index],
+                              },
+                          }),
+                      ]
+                    : []),
             ]);
 
             if (options.updateHistory) {
@@ -933,7 +949,7 @@ export const ChartDBProvider: React.FC<
                 resetRedoStack();
             }
         },
-        [db, diagramId, setTables, addUndoAction, resetRedoStack]
+        [db, diagramId, setTables, addUndoAction, resetRedoStack, getTable]
     );
 
     const removeIndex: ChartDBContext['removeIndex'] = useCallback(
@@ -943,6 +959,8 @@ export const ChartDBProvider: React.FC<
             options = { updateHistory: true }
         ) => {
             const prevIndex = getIndex(tableId, indexId);
+            // Read current table from React state before setTables runs.
+            const dbTable = getTable(tableId);
             setTables((tables) =>
                 tables.map((table) =>
                     table.id === tableId
@@ -956,28 +974,23 @@ export const ChartDBProvider: React.FC<
                 )
             );
 
-            const dbTable = await db.getTable({
-                diagramId,
-                id: tableId,
-            });
-
-            if (!dbTable) {
-                return;
-            }
-
             const updatedAt = new Date();
             setDiagramUpdatedAt(updatedAt);
             await Promise.all([
                 db.updateDiagram({ id: diagramId, attributes: { updatedAt } }),
-                db.updateTable({
-                    id: tableId,
-                    attributes: {
-                        ...dbTable,
-                        indexes: dbTable.indexes.filter(
-                            (i) => i.id !== indexId
-                        ),
-                    },
-                }),
+                ...(dbTable
+                    ? [
+                          db.updateTable({
+                              id: tableId,
+                              attributes: {
+                                  ...dbTable,
+                                  indexes: dbTable.indexes.filter(
+                                      (i) => i.id !== indexId
+                                  ),
+                              },
+                          }),
+                      ]
+                    : []),
             ]);
 
             if (!!prevIndex && options.updateHistory) {
@@ -989,7 +1002,15 @@ export const ChartDBProvider: React.FC<
                 resetRedoStack();
             }
         },
-        [db, diagramId, setTables, addUndoAction, resetRedoStack, getIndex]
+        [
+            db,
+            diagramId,
+            setTables,
+            addUndoAction,
+            resetRedoStack,
+            getIndex,
+            getTable,
+        ]
     );
 
     const createIndex: ChartDBContext['createIndex'] = useCallback(

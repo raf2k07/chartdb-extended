@@ -1,0 +1,30 @@
+services:
+    frontend:
+        build:
+            context: .
+            args:
+                # URL the browser uses to reach the backend.
+                # For local deployment: http://localhost:3001
+                # For a remote server: http://<your-host>:3001
+                VITE_API_URL: ${API_URL:-http://localhost:3001}
+                VITE_USE_SERVER_STORAGE: 'true'
+                VITE_HIDE_CHARTDB_CLOUD: ${HIDE_CHARTDB_CLOUD:-true}
+                VITE_DISABLE_ANALYTICS: ${DISABLE_ANALYTICS:-true}
+        ports:
+            - '${FRONTEND_PORT:-80}:80'
+        depends_on:
+            - backend
+
+    backend:
+        build:
+            context: ./backend
+        ports:
+            - '${BACKEND_PORT:-3001}:3001'
+        volumes:
+            - db_data:/data
+        environment:
+            PORT: 3001
+            DB_PATH: /data/chartdb.db
+
+volumes:
+    db_data:

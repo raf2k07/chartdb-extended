@@ -4,6 +4,7 @@ import { useDialog } from '@/hooks/use-dialog';
 import { useFullScreenLoader } from '@/hooks/use-full-screen-spinner';
 import { useRedoUndoStack } from '@/hooks/use-redo-undo-stack';
 import { useStorage } from '@/hooks/use-storage';
+import { useServerHydration } from '@/hooks/use-server-hydration';
 import type { Diagram } from '@/lib/domain/diagram';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -17,12 +18,22 @@ export const useDiagramLoader = () => {
     const { showLoader, hideLoader } = useFullScreenLoader();
     const { openCreateDiagramDialog, openOpenDiagramDialog } = useDialog();
     const navigate = useNavigate();
-    const { listDiagrams } = useStorage();
+    const storage = useStorage();
+    const { listDiagrams } = storage;
+
+    // Pull SQLite-authoritative state into Dexie before loading anything.
+    // When USE_SERVER_STORAGE is false this resolves immediately.
+    const { hydrated } = useServerHydration(storage);
 
     const currentDiagramLoadingRef = useRef<string | undefined>(undefined);
 
     useEffect(() => {
         if (!config) {
+            return;
+        }
+
+        // Wait for the server → Dexie hydration to complete.
+        if (!hydrated) {
             return;
         }
 
@@ -86,6 +97,7 @@ export const useDiagramLoader = () => {
         showLoader,
         currentDiagram?.id,
         openOpenDiagramDialog,
+        hydrated,
     ]);
 
     return { initialDiagram };

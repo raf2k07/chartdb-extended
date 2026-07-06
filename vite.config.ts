@@ -25,6 +25,13 @@ export default defineConfig({
             ],
         }),
     ],
+    server: {
+        proxy: {
+            // Forward /api/* to the backend during local development.
+            // In Docker Compose, VITE_API_URL is baked in at build time instead.
+            '/api': 'http://localhost:3001',
+        },
+    },
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './src'),
