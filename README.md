@@ -44,6 +44,14 @@
 
 ### 🎉 ChartDB
 
+### ChartDB Extended
+This fork adds a local API server to ChartDB, written in Hono.js and backed by a SQLite server. It persists ChartDB writes to the SQLite server, so your changes are visible to all users connecting to the server, instead of being persisted only to the local browser indexedDB. This fork is meant to be run on a remote server, to which users can simply connect with their browser and collaborate (synchronously, views only refresh on browser reload!). There is no conflict resolution, the last save wins.
+
+>NOTE: This was created with the help of AI, and is NOT meant for production use.
+
+### How to use this extended version
+Clone `.env.local.example` to `.env.local` as is, the API URL should be set in the docker-compose file. Run `docker-compose up` to start the extended version.
+
 ChartDB is a powerful, web-based database diagramming editor.
 Instantly visualize your database schema with a single **"Smart Query."** Customize diagrams, export SQL scripts, and access all features—no account required. Experience seamless database design here.
 
